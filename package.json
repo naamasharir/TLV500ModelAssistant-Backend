@@ -7,7 +7,7 @@
     "dev": "nodemon index.js",
     "build": "echo 'No build step needed for Node.js backend'",
     "postinstall": "echo 'Backend dependencies installed successfully'",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo 'No tests specified - skipping'"
   },
   "keywords": [],
   "author": "",
