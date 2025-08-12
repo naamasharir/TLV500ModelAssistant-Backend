@@ -1084,15 +1084,21 @@ app.post('/api/debug/test-save', async (req, res) => {
 
 // Get all chat sessions for a user
 app.get('/api/chat/sessions', async (req, res) => {
+    console.log('🔍 /api/chat/sessions endpoint called');
+    console.log('🔐 Authentication status:', req.isAuthenticated());
+    
     if (!req.isAuthenticated()) {
-        return res.status(401).json({ error: 'Not authenticated' });
+        console.log('❌ User not authenticated - returning empty sessions array');
+        return res.json([]); // Return empty array instead of 401 error
     }
     
     try {
+        console.log('✅ User authenticated - fetching sessions for user:', req.user.email);
         const sessions = await ChatHistory.findUserSessions(req.user._id);
+        console.log('📊 Found sessions:', sessions.length);
         res.json(sessions);
     } catch (error) {
-        console.error('Error fetching chat sessions:', error);
+        console.error('❌ Error fetching chat sessions:', error);
         res.status(500).json({ error: 'Failed to fetch chat sessions' });
     }
 });
