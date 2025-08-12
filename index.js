@@ -3280,8 +3280,16 @@ app.listen(PORT, () => {
 
 // 🔥 NEW: Excel to Google Sheets conversion endpoint
 app.post('/api/excel-to-sheets', upload.single('excel'), async (req, res) => {
+    console.log('🔍 /api/excel-to-sheets endpoint called');
+    console.log('🔐 Authentication status:', req.isAuthenticated());
+    
     if (!req.isAuthenticated()) {
-        return res.status(401).json({ error: 'Not authenticated' });
+        console.log('❌ User not authenticated for Excel conversion - requires Google Drive access');
+        return res.status(401).json({
+            error: 'Authentication required',
+            message: 'Please log in with Google to convert Excel files to Google Sheets',
+            requiresAuth: true
+        });
     }
 
     if (!req.file) {
