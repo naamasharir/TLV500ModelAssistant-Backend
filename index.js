@@ -281,7 +281,9 @@ passport.deserializeUser(async (id, done) => {
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "/auth/google/callback"
+    callbackURL: process.env.NODE_ENV === 'production'
+        ? `https://tlv500-backendserver-dqfed5d9dcfkd3ce.westeurope-01.azurewebsites.net/auth/google/callback`
+        : "/auth/google/callback"
 }, async (accessToken, refreshToken, profile, done) => {
     try {
         console.log('🔐 Google OAuth callback - Profile:', {
@@ -328,7 +330,10 @@ passport.use(new GoogleStrategy({
 
 app.get('/', (req, res) => {
     if (req.isAuthenticated()) {
-        res.redirect('http://localhost:3000');
+        const frontendUrl = process.env.NODE_ENV === 'production'
+            ? process.env.FRONTEND_URL
+            : 'http://localhost:3000';
+        res.redirect(frontendUrl);
     } else {
         const html = `<!DOCTYPE html>
 <html dir="rtl">
