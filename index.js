@@ -618,8 +618,8 @@ app.get('/auth/google/callback',
         console.log('🔐 Google OAuth callback successful');
         console.log('👤 User authenticated:', req.user.email);
         
-        // Store user session properly
-        req.session.user = req.user;
+        // Passport automatically saves the user to req.session.passport.user
+        // Let's also manually ensure session is properly saved
         req.session.save((err) => {
             if (err) {
                 console.error('❌ Session save error:', err);
@@ -627,6 +627,7 @@ app.get('/auth/google/callback',
             } else {
                 console.log('✅ Session saved successfully');
                 console.log('🍪 Session ID:', req.sessionID);
+                console.log('👤 Session passport user:', req.session.passport?.user || 'none');
                 
                 // Redirect to frontend with success indicator
                 res.redirect(`${process.env.FRONTEND_URL}?auth=success`);
