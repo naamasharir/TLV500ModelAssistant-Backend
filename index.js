@@ -679,12 +679,12 @@ app.get('/api/user', (req, res) => {
             note: 'Using Azure App Service authentication'
         });
     } else {
-        console.log('❌ User not authenticated');
-        res.status(401).json({
-            error: 'Not authenticated',
+        console.log('❌ User not authenticated - returning null user instead of 401');
+        // Return null user instead of 401 error to prevent frontend crashes
+        res.json({
+            user: null,
+            authenticated: false,
             sessionId: req.sessionID,
-            hasAzureAuth: !!req.azureAuth,
-            headers: Object.keys(req.headers),
             debug: {
                 cookieHeader: req.headers.cookie ? 'Present' : 'Missing',
                 sessionExists: !!req.session,
