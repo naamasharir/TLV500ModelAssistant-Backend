@@ -611,17 +611,27 @@ app.get('/auth/google', passport.authenticate('google', {
 }));
 
 app.get('/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/' }),
+    passport.authenticate('google', {
+        failureRedirect: `${process.env.FRONTEND_URL}?error=auth_failed`
+    }),
     (req, res) => {
         console.log('🔐 Google OAuth callback successful');
         console.log('👤 User authenticated:', req.user.email);
         
-        const token = req.user.accessToken;
-        const redirectUrl = process.env.NODE_ENV === 'production'
-            ? `${process.env.FRONTEND_URL}?token=${token}`
-            : `http://localhost:3000?token=${token}`;
-            
-        res.redirect(redirectUrl);
+        // Store user session properly
+        req.session.user = req.user;
+        req.session.save((err) => {
+            if (err) {
+                console.error('❌ Session save error:', err);
+                res.redirect(`${process.env.FRONTEND_URL}?error=session_error`);
+            } else {
+                console.log('✅ Session saved successfully');
+                console.log('🍪 Session ID:', req.sessionID);
+                
+                // Redirect to frontend with success indicator
+                res.redirect(`${process.env.FRONTEND_URL}?auth=success`);
+            }
+        });
     }
 );
 
