@@ -239,12 +239,38 @@ const upload = multer({
 
 // Configure CORS
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL
-    : 'http://localhost:3000',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'https://yellow-river-01e099d03.1.azurestaticapps.net',
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Cache-Control',
+    'X-File-Name',
+    'X-CSRF-Token'
+  ],
+  exposedHeaders: ['Set-Cookie'],
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
 
 app.use(cors(corsOptions));
@@ -261,9 +287,11 @@ app.use(session({
     cookie: {
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
         secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-    }
+        httpOnly: false, // Allow JavaScript access for debugging
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        domain: process.env.NODE_ENV === 'production' ? undefined : undefined // Let browser handle domain
+    },
+    name: 'fin-copilot-session' // Custom session name
 }));
 
 app.use(passport.initialize());
@@ -328,6 +356,47 @@ passport.use(new GoogleStrategy({
         return done(error, null);
     }
 }));
+
+// Azure App Service Authentication middleware
+app.use((req, res, next) => {
+    // Check for Azure App Service auth headers
+    const azureUser = req.headers['x-ms-client-principal'];
+    const azureToken = req.headers['x-ms-token-google-access-token'];
+    
+    if (azureUser && azureToken && !req.isAuthenticated()) {
+        try {
+            const userInfo = JSON.parse(Buffer.from(azureUser, 'base64').toString());
+            console.log('🔵 Azure App Service user detected:', userInfo.userDetails);
+            
+            // You could create a session here or handle Azure auth
+            // For now, we'll log it and continue with custom auth
+            req.azureAuth = {
+                user: userInfo,
+                token: azureToken
+            };
+        } catch (error) {
+            console.error('Error parsing Azure auth:', error);
+        }
+    }
+    
+    next();
+});
+
+// Add debugging middleware for authentication
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+        console.log(`🔍 API Request: ${req.method} ${req.path}`);
+        console.log(`🔐 Authenticated: ${req.isAuthenticated()}`);
+        console.log(`🍪 Session ID: ${req.sessionID}`);
+        console.log(`👤 User: ${req.user ? req.user.email : 'None'}`);
+        console.log(`🔵 Azure Auth: ${req.azureAuth ? 'Present' : 'None'}`);
+        
+        if (req.headers.cookie) {
+            console.log(`🍪 Cookies: ${req.headers.cookie.substring(0, 100)}...`);
+        }
+    }
+    next();
+});
 
 app.get('/', (req, res) => {
     if (req.isAuthenticated()) {
@@ -575,6 +644,12 @@ app.get('/auth/logout', (req, res) => {
 });
 
 app.get('/api/user', (req, res) => {
+    console.log('🔍 /api/user endpoint called');
+    console.log('🔐 req.isAuthenticated():', req.isAuthenticated());
+    console.log('🍪 Session ID:', req.sessionID);
+    console.log('👤 User object:', req.user ? 'Present' : 'None');
+    console.log('🔵 Azure auth:', req.azureAuth ? 'Present' : 'None');
+    
     if (req.isAuthenticated()) {
         res.json({
             user: {
@@ -586,10 +661,36 @@ app.get('/api/user', (req, res) => {
                 preferences: req.user.preferences,
                 lastLogin: req.user.lastLogin
             },
-            accessToken: req.user.accessToken
+            accessToken: req.user.accessToken,
+            sessionId: req.sessionID,
+            authMethod: 'passport'
+        });
+    } else if (req.azureAuth) {
+        // Fallback to Azure auth if available
+        console.log('🔵 Using Azure authentication fallback');
+        res.json({
+            user: {
+                name: req.azureAuth.user.userDetails,
+                email: req.azureAuth.user.userDetails,
+                profilePicture: null
+            },
+            accessToken: req.azureAuth.token,
+            authMethod: 'azure',
+            note: 'Using Azure App Service authentication'
         });
     } else {
-        res.status(401).json({ error: 'Not authenticated' });
+        console.log('❌ User not authenticated');
+        res.status(401).json({
+            error: 'Not authenticated',
+            sessionId: req.sessionID,
+            hasAzureAuth: !!req.azureAuth,
+            headers: Object.keys(req.headers),
+            debug: {
+                cookieHeader: req.headers.cookie ? 'Present' : 'Missing',
+                sessionExists: !!req.session,
+                sessionUser: req.session ? !!req.session.passport : false
+            }
+        });
     }
 });
 
