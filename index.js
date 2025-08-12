@@ -1105,8 +1105,12 @@ app.get('/api/chat/sessions', async (req, res) => {
 
 // Get messages for a specific session
 app.get('/api/chat/session/:sessionId', async (req, res) => {
+    console.log('🔍 /api/chat/session/:sessionId endpoint called');
+    console.log('🔐 Authentication status:', req.isAuthenticated());
+    
     if (!req.isAuthenticated()) {
-        return res.status(401).json({ error: 'Not authenticated' });
+        console.log('❌ User not authenticated - returning empty session');
+        return res.status(404).json({ error: 'Session not found' }); // Return 404 instead of 401
     }
     
     try {
@@ -1548,8 +1552,17 @@ app.post('/api/action/redo', async (req, res) => {
 
 // 📊 Get Undo/Redo Status
 app.get('/api/action/status/:sessionId', async (req, res) => {
+    console.log('🔍 /api/action/status/:sessionId endpoint called');
+    console.log('🔐 Authentication status:', req.isAuthenticated());
+    
     if (!req.isAuthenticated()) {
-        return res.status(401).json({ error: 'Not authenticated' });
+        console.log('❌ User not authenticated - returning default status');
+        return res.json({
+            canUndo: false,
+            canRedo: false,
+            changesCount: 0,
+            message: 'Not authenticated'
+        });
     }
 
     try {
