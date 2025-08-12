@@ -297,12 +297,31 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-passport.serializeUser((user, done) => done(null, user._id));
+passport.serializeUser((user, done) => {
+    console.log('🔐 Serializing user:', user._id);
+    done(null, user._id);
+});
+
 passport.deserializeUser(async (id, done) => {
     try {
+        console.log('🔍 Deserializing user ID:', id);
+        
+        if (!id) {
+            console.log('❌ No user ID provided to deserializeUser');
+            return done(null, false);
+        }
+        
         const user = await User.findById(id);
+        
+        if (!user) {
+            console.log('❌ User not found in database for ID:', id);
+            return done(null, false);
+        }
+        
+        console.log('✅ User deserialized successfully:', user.email);
         done(null, user);
     } catch (error) {
+        console.error('❌ Error in deserializeUser:', error);
         done(error, null);
     }
 });
@@ -660,6 +679,8 @@ app.get('/api/user', (req, res) => {
     console.log('🍪 Session ID:', req.sessionID);
     console.log('👤 User object:', req.user ? 'Present' : 'None');
     console.log('🔵 Azure auth:', req.azureAuth ? 'Present' : 'None');
+    console.log('📋 Session passport data:', req.session?.passport || 'None');
+    console.log('🔑 Session passport user:', req.session?.passport?.user || 'None');
     
     if (req.isAuthenticated()) {
         res.json({
@@ -699,7 +720,9 @@ app.get('/api/user', (req, res) => {
             debug: {
                 cookieHeader: req.headers.cookie ? 'Present' : 'Missing',
                 sessionExists: !!req.session,
-                sessionUser: req.session ? !!req.session.passport : false
+                sessionUser: req.session ? !!req.session.passport : false,
+                passportData: req.session?.passport || null,
+                passportUser: req.session?.passport?.user || null
             }
         });
     }
