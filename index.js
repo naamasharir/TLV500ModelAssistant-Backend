@@ -298,30 +298,62 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 passport.serializeUser((user, done) => {
-    console.log('🔐 Serializing user:', user._id);
+    console.log('🔐 ===== PASSPORT SERIALIZE USER =====');
+    console.log('🔐 Serializing user object:', {
+        _id: user?._id,
+        email: user?.email,
+        googleId: user?.googleId,
+        isValidObjectId: mongoose.Types.ObjectId.isValid(user?._id)
+    });
+    
+    if (!user || !user._id) {
+        console.error('❌ Invalid user object in serializeUser:', user);
+        return done(new Error('Invalid user object'), null);
+    }
+    
+    console.log('✅ User serialized with ID:', user._id);
     done(null, user._id);
 });
 
 passport.deserializeUser(async (id, done) => {
     try {
+        console.log('🔍 ===== PASSPORT DESERIALIZE USER =====');
         console.log('🔍 Deserializing user ID:', id);
+        console.log('🔍 ID type:', typeof id);
+        console.log('🔍 ID isValid ObjectId:', mongoose.Types.ObjectId.isValid(id));
         
         if (!id) {
             console.log('❌ No user ID provided to deserializeUser');
             return done(null, false);
         }
         
+        console.log('🔍 Querying database for user...');
+        console.log('🔍 Database connection state:', mongoose.connection.readyState);
+        
         const user = await User.findById(id);
+        
+        console.log('🔍 Database query result:', user ? 'User found' : 'User not found');
         
         if (!user) {
             console.log('❌ User not found in database for ID:', id);
             return done(null, false);
         }
         
-        console.log('✅ User deserialized successfully:', user.email);
+        console.log('✅ User deserialized successfully:', {
+            _id: user._id,
+            email: user.email,
+            googleId: user.googleId,
+            name: user.name
+        });
+        
         done(null, user);
     } catch (error) {
-        console.error('❌ Error in deserializeUser:', error);
+        console.error('❌ ===== ERROR IN DESERIALIZE USER =====');
+        console.error('❌ Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
         done(error, null);
     }
 });
@@ -334,27 +366,64 @@ passport.use(new GoogleStrategy({
         : "/auth/google/callback"
 }, async (accessToken, refreshToken, profile, done) => {
     try {
+        console.log('🔐 ===== GOOGLE OAUTH STRATEGY DETAILED DEBUG =====');
         console.log('🔐 Google OAuth strategy callback started');
+        console.log('📋 Raw profile object keys:', Object.keys(profile || {}));
+        console.log('📋 Profile._raw exists:', !!profile?._raw);
+        console.log('📋 Profile._json exists:', !!profile?._json);
         console.log('📋 Profile received:', {
             id: profile?.id || 'Missing',
             name: profile?.displayName || 'Missing',
             email: profile?.emails?.[0]?.value || 'Missing',
-            hasPhotos: profile?.photos?.length > 0
+            hasPhotos: profile?.photos?.length > 0,
+            provider: profile?.provider || 'Missing'
         });
-        console.log('🔑 Access token received:', accessToken ? 'Yes' : 'No');
-        console.log('🔄 Refresh token received:', refreshToken ? 'Yes' : 'No');
-
-        if (!profile || !profile.id || !profile.emails || !profile.emails[0]) {
-            console.error('❌ Invalid profile data from Google');
-            return done(new Error('Invalid profile data from Google'), null);
+        console.log('🔑 Access token received:', accessToken ? `Yes (${accessToken.substring(0, 10)}...)` : 'No');
+        console.log('🔄 Refresh token received:', refreshToken ? `Yes (${refreshToken.substring(0, 10)}...)` : 'No');
+        
+        // Enhanced validation
+        console.log('🔍 Validating profile data...');
+        if (!profile) {
+            console.error('❌ Profile is null or undefined');
+            return done(new Error('Profile is null or undefined'), null);
         }
+        
+        if (!profile.id) {
+            console.error('❌ Profile.id is missing:', profile.id);
+            return done(new Error('Profile ID is missing'), null);
+        }
+        
+        if (!profile.emails || !Array.isArray(profile.emails) || profile.emails.length === 0) {
+            console.error('❌ Profile.emails is invalid:', profile.emails);
+            return done(new Error('Profile emails are missing or invalid'), null);
+        }
+        
+        if (!profile.emails[0] || !profile.emails[0].value) {
+            console.error('❌ Profile.emails[0].value is missing:', profile.emails[0]);
+            return done(new Error('Primary email is missing'), null);
+        }
+        
+        console.log('✅ Profile validation passed');
 
         // Check if user already exists
-        console.log('🔍 Checking if user exists with Google ID:', profile.id);
+        console.log('🔍 Checking database connection...');
+        console.log('🔍 MongoDB readyState:', mongoose.connection.readyState);
+        console.log('🔍 Database name:', mongoose.connection.db?.databaseName || 'Unknown');
+        
+        console.log('🔍 Searching for user with Google ID:', profile.id);
         let user = await User.findOne({ googleId: profile.id });
+        console.log('🔍 Database search result:', user ? 'Found existing user' : 'No existing user found');
         
         if (user) {
             console.log('✅ Found existing user, updating...');
+            console.log('👤 Existing user details:', {
+                id: user._id,
+                email: user.email,
+                name: user.name,
+                googleId: user.googleId,
+                createdAt: user.createdAt
+            });
+            
             // Update existing user
             user.accessToken = accessToken;
             user.refreshToken = refreshToken;
@@ -364,12 +433,20 @@ passport.use(new GoogleStrategy({
             if (profile.photos && profile.photos.length > 0) {
                 user.profilePicture = profile.photos[0].value;
             }
-            await user.save();
-            console.log('👤 Updated existing user:', user.email);
+            
+            console.log('💾 Saving updated user to database...');
+            const savedUser = await user.save();
+            console.log('✅ User updated successfully:', {
+                id: savedUser._id,
+                email: savedUser.email,
+                lastLogin: savedUser.lastLogin
+            });
+            user = savedUser;
         } else {
             console.log('🆕 Creating new user...');
+            
             // Create new user
-            user = new User({
+            const newUser = new User({
                 googleId: profile.id,
                 email: profile.emails[0].value,
                 name: profile.displayName,
@@ -377,19 +454,49 @@ passport.use(new GoogleStrategy({
                 accessToken: accessToken,
                 refreshToken: refreshToken
             });
-            await user.save();
-            console.log('🆕 Created new user:', user.email);
+            
+            console.log('💾 Saving new user to database...');
+            console.log('🆕 New user data:', {
+                googleId: newUser.googleId,
+                email: newUser.email,
+                name: newUser.name,
+                hasProfilePicture: !!newUser.profilePicture
+            });
+            
+            const savedUser = await newUser.save();
+            console.log('✅ New user created successfully:', {
+                id: savedUser._id,
+                email: savedUser.email,
+                createdAt: savedUser.createdAt
+            });
+            user = savedUser;
         }
         
-        console.log('✅ Google OAuth strategy completed successfully');
+        console.log('🔐 Final user object for passport:', {
+            _id: user._id,
+            googleId: user.googleId,
+            email: user.email,
+            name: user.name,
+            hasAccessToken: !!user.accessToken
+        });
+        
+        console.log('✅ ===== GOOGLE OAUTH STRATEGY COMPLETED SUCCESSFULLY =====');
         return done(null, user);
     } catch (error) {
-        console.error('❌ Error in Google OAuth strategy:', error);
-        console.error('❌ Error details:', {
-            message: error.message,
-            stack: error.stack,
-            name: error.name
-        });
+        console.error('❌ ===== ERROR IN GOOGLE OAUTH STRATEGY =====');
+        console.error('❌ Error name:', error.name);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error stack:', error.stack);
+        
+        if (error.name === 'MongoError' || error.name === 'MongooseError') {
+            console.error('❌ Database error details:', {
+                code: error.code,
+                codeName: error.codeName,
+                connectionState: mongoose.connection.readyState
+            });
+        }
+        
+        console.error('❌ ===== END ERROR DETAILS =====');
         return done(error, null);
     }
 }));
