@@ -334,16 +334,27 @@ passport.use(new GoogleStrategy({
         : "/auth/google/callback"
 }, async (accessToken, refreshToken, profile, done) => {
     try {
-        console.log('🔐 Google OAuth callback - Profile:', {
-            id: profile.id,
-            name: profile.displayName,
-            email: profile.emails[0].value
+        console.log('🔐 Google OAuth strategy callback started');
+        console.log('📋 Profile received:', {
+            id: profile?.id || 'Missing',
+            name: profile?.displayName || 'Missing',
+            email: profile?.emails?.[0]?.value || 'Missing',
+            hasPhotos: profile?.photos?.length > 0
         });
+        console.log('🔑 Access token received:', accessToken ? 'Yes' : 'No');
+        console.log('🔄 Refresh token received:', refreshToken ? 'Yes' : 'No');
+
+        if (!profile || !profile.id || !profile.emails || !profile.emails[0]) {
+            console.error('❌ Invalid profile data from Google');
+            return done(new Error('Invalid profile data from Google'), null);
+        }
 
         // Check if user already exists
+        console.log('🔍 Checking if user exists with Google ID:', profile.id);
         let user = await User.findOne({ googleId: profile.id });
         
         if (user) {
+            console.log('✅ Found existing user, updating...');
             // Update existing user
             user.accessToken = accessToken;
             user.refreshToken = refreshToken;
@@ -356,6 +367,7 @@ passport.use(new GoogleStrategy({
             await user.save();
             console.log('👤 Updated existing user:', user.email);
         } else {
+            console.log('🆕 Creating new user...');
             // Create new user
             user = new User({
                 googleId: profile.id,
@@ -369,9 +381,15 @@ passport.use(new GoogleStrategy({
             console.log('🆕 Created new user:', user.email);
         }
         
+        console.log('✅ Google OAuth strategy completed successfully');
         return done(null, user);
     } catch (error) {
         console.error('❌ Error in Google OAuth strategy:', error);
+        console.error('❌ Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
         return done(error, null);
     }
 }));
@@ -629,31 +647,51 @@ app.get('/auth/google', passport.authenticate('google', {
     scope: ['profile', 'email', 'https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 }));
 
-app.get('/auth/google/callback',
-    passport.authenticate('google', {
-        failureRedirect: `${process.env.FRONTEND_URL}?error=auth_failed`
-    }),
-    (req, res) => {
-        console.log('🔐 Google OAuth callback successful');
-        console.log('👤 User authenticated:', req.user.email);
+app.get('/auth/google/callback', (req, res, next) => {
+    console.log('🔐 OAuth callback received');
+    console.log('📋 Query params:', req.query);
+    console.log('🔑 Google Client ID:', process.env.GOOGLE_CLIENT_ID ? 'Present' : 'Missing');
+    console.log('🔐 Google Client Secret:', process.env.GOOGLE_CLIENT_SECRET ? 'Present' : 'Missing');
+    
+    passport.authenticate('google', (err, user, info) => {
+        console.log('🔍 Passport authenticate result:');
+        console.log('  Error:', err);
+        console.log('  User:', user ? 'Present' : 'None');
+        console.log('  Info:', info);
         
-        // Passport automatically saves the user to req.session.passport.user
-        // Let's also manually ensure session is properly saved
-        req.session.save((err) => {
-            if (err) {
-                console.error('❌ Session save error:', err);
-                res.redirect(`${process.env.FRONTEND_URL}?error=session_error`);
-            } else {
+        if (err) {
+            console.error('❌ Passport authentication error:', err);
+            return res.redirect(`${process.env.FRONTEND_URL}?error=auth_failed&details=${encodeURIComponent(err.message)}`);
+        }
+        
+        if (!user) {
+            console.error('❌ No user returned from authentication');
+            return res.redirect(`${process.env.FRONTEND_URL}?error=no_user&info=${encodeURIComponent(JSON.stringify(info))}`);
+        }
+        
+        req.logIn(user, (loginErr) => {
+            if (loginErr) {
+                console.error('❌ Login error:', loginErr);
+                return res.redirect(`${process.env.FRONTEND_URL}?error=login_failed&details=${encodeURIComponent(loginErr.message)}`);
+            }
+            
+            console.log('✅ User logged in successfully:', user.email);
+            console.log('🍪 Session ID:', req.sessionID);
+            
+            req.session.save((sessionErr) => {
+                if (sessionErr) {
+                    console.error('❌ Session save error:', sessionErr);
+                    return res.redirect(`${process.env.FRONTEND_URL}?error=session_error&details=${encodeURIComponent(sessionErr.message)}`);
+                }
+                
                 console.log('✅ Session saved successfully');
-                console.log('🍪 Session ID:', req.sessionID);
                 console.log('👤 Session passport user:', req.session.passport?.user || 'none');
                 
-                // Redirect to frontend with success indicator
                 res.redirect(`${process.env.FRONTEND_URL}?auth=success`);
-            }
+            });
         });
-    }
-);
+    })(req, res, next);
+});
 
 // Logout endpoint
 app.get('/auth/logout', (req, res) => {
